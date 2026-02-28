@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nkvm-runner
+  namespace: nkvm-integration
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nkvm-unbound
+  namespace: nkvm-integration
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nkvm-runtime
+  namespace: nkvm-integration
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["list"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create", "delete", "get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nkvm-runtime
+  namespace: nkvm-integration
+subjects:
+  - kind: ServiceAccount
+    name: nkvm-runner
+    namespace: nkvm-integration
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nkvm-runtime

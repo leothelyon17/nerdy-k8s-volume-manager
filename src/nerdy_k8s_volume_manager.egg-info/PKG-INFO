@@ -1,0 +1,96 @@
+Metadata-Version: 2.4
+Name: nerdy-k8s-volume-manager
+Version: 0.1.0
+Summary: Streamlit app for Kubernetes PVC inventory and tar backups
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+Requires-Dist: kubernetes>=30.1.0
+Requires-Dist: streamlit>=1.42.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.3.0; extra == "dev"
+Requires-Dist: ruff>=0.9.0; extra == "dev"
+
+# nerdy-k8s-volume-manager
+
+Streamlit-based Kubernetes volume manager scaffold for:
+- authenticating to a cluster,
+- discovering PVCs and the workloads that consume them,
+- backing up one or many PVCs as `.tar.gz` files,
+- recording backup outcomes and last successful timestamps.
+
+## Current MVP Architecture
+
+The architecture decision and tradeoff analysis are documented in:
+- [`docs/adrs/001-kubernetes-volume-backup-streamlit-mvp-architecture.md`](docs/adrs/001-kubernetes-volume-backup-streamlit-mvp-architecture.md)
+
+## Project Layout
+
+- `src/nerdy_k8s_volume_manager/app.py`: Streamlit UI and workflow orchestration.
+- `src/nerdy_k8s_volume_manager/k8s.py`: Kubernetes auth, discovery, and PVC owner resolution.
+- `src/nerdy_k8s_volume_manager/backup.py`: Ephemeral helper pod tar backup workflow.
+- `src/nerdy_k8s_volume_manager/metadata.py`: SQLite persistence for backup history.
+- `docs/adrs/`: Architecture decision records.
+
+## Quick Start
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+PYTHONPATH=src streamlit run src/nerdy_k8s_volume_manager/app.py
+```
+
+## Configuration
+
+Environment variables:
+
+- `NKVM_BACKUP_DIR` (default: `./backups`)
+- `NKVM_METADATA_DB_PATH` (default: `./data/backups.db`)
+- `NKVM_HELPER_IMAGE` (default: `alpine:3.20`)
+- `NKVM_HELPER_POD_TIMEOUT_SECONDS` (default: `120`)
+
+## Backup Flow (MVP)
+
+1. Connect to cluster (kubeconfig path, pasted kubeconfig, or in-cluster auth).
+2. Discover PVCs and infer owner workloads from Pod owner references.
+3. Select one or many PVCs.
+4. For each PVC, create a short-lived helper pod with read-only PVC mount.
+5. Create `.tar.gz` archive in the helper pod and copy locally with `kubectl cp`.
+6. Persist backup status and timestamps in SQLite.
+
+## Metadata Schema and Query Contract
+
+SQLite table (created by `BackupMetadataStore.initialize()`):
+
+```sql
+CREATE TABLE IF NOT EXISTS backup_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pvc_uid TEXT NOT NULL,
+    namespace TEXT NOT NULL,
+    pvc_name TEXT NOT NULL,
+    status TEXT NOT NULL,
+    backup_path TEXT,
+    checksum_sha256 TEXT,
+    message TEXT,
+    created_at TEXT NOT NULL
+);
+```
+
+Query contract:
+- `get_last_success_map()` returns one entry per `(namespace, pvc_name)` for the latest successful backup only.
+- `get_recent_results(limit)` returns results in deterministic order: `created_at DESC, id DESC`.
+- Tie-break behavior for same `created_at` values is deterministic via `id DESC` (latest insert first).
+- `count_results()` returns total history row count.
+- `get_retention_candidate_ids(keep_latest)` returns row IDs older than the most recent `keep_latest` rows using the same deterministic ordering, so callers can implement cleanup policies safely.
+
+## Notes
+
+- `kubectl` must be installed and available in `PATH` for artifact copy.
+- Current backup target is local filesystem; object storage integration is a planned enhancement.
+- Backups are crash-consistent by default; app-consistent hooks are not yet implemented.
+
+## Tests
+
+```bash
+PYTHONPATH=src pytest -q
+```

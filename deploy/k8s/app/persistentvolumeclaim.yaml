@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nkvm-runtime-data
+  namespace: nerdy-k8s-volume-manager
+  labels:
+    app.kubernetes.io/name: nerdy-k8s-volume-manager
+spec:
+  accessModes:
+    - ReadWriteOnce
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: 20Gi

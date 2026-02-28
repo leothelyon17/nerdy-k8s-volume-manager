@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nkvm-integration
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nkvm-smoke-data
+  namespace: nkvm-integration
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 64Mi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nkvm-source-pod
+  namespace: nkvm-integration
+spec:
+  containers:
+    - name: writer
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - |
+          set -eu
+          mkdir -p /data
+          echo "nkvm integration smoke payload" > /data/hello.txt
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > /data/generated-at.txt
+          while true; do sleep 30; done
+      volumeMounts:
+        - name: data
+          mountPath: /data
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: nkvm-smoke-data
