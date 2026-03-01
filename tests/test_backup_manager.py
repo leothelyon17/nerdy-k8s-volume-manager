@@ -1061,6 +1061,66 @@ def test_upload_archive_to_remote_destination_with_rsync_runs_mkdir_and_rsync_co
     assert remote_path == "rsync://backup.internal/archives/daily/archive.tar.gz"
 
 
+def test_upload_archive_to_remote_destination_with_rsync_preserves_relative_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = BackupManager(
+        core_api=Mock(),
+        metadata_store=Mock(),
+        config=BackupManagerConfig(
+            backup_dir=tmp_path,
+            helper_image="alpine:3.20",
+            helper_pod_timeout_seconds=15,
+            kubeconfig_path=None,
+            context=None,
+            destination_mode="remote",
+            remote_destination=RemoteDestinationConfig(
+                protocol="rsync",
+                host="backup.internal",
+                username="svc-backup",
+                password="secret",
+                directory="cloud-sync/daily",
+            ),
+        ),
+    )
+    local_archive = tmp_path / "archive.tar.gz"
+    local_archive.write_bytes(b"archive-payload")
+
+    binaries = {
+        "sshpass": "/usr/bin/sshpass",
+        "ssh": "/usr/bin/ssh",
+        "rsync": "/usr/bin/rsync",
+    }
+    monkeypatch.setattr("nerdy_k8s_volume_manager.backup.shutil.which", lambda name: binaries.get(name))
+    captured_commands: list[tuple[list[str], dict[str, str]]] = []
+
+    def _fake_run(
+        command: list[str],
+        *,
+        check: bool,
+        capture_output: bool,
+        text: bool,
+        env: dict[str, str],
+    ) -> subprocess.CompletedProcess[str]:
+        assert check is False
+        assert capture_output is True
+        assert text is True
+        captured_commands.append((command, env))
+        return subprocess.CompletedProcess(args=command, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("nerdy_k8s_volume_manager.backup.subprocess.run", _fake_run)
+
+    remote_path = manager._upload_archive_to_remote_destination(local_archive_path=local_archive)
+
+    mkdir_command, _ = captured_commands[0]
+    rsync_command, _ = captured_commands[1]
+
+    assert mkdir_command[-1] == "mkdir -p cloud-sync/daily"
+    assert rsync_command[-1] == "svc-backup@backup.internal:cloud-sync/daily/archive.tar.gz"
+    assert remote_path == "rsync://backup.internal/cloud-sync/daily/archive.tar.gz"
+
+
 def test_upload_archive_to_remote_destination_with_scp_without_sshpass_returns_remote_stage_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

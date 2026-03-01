@@ -240,7 +240,10 @@ class BackupManager:
         remote_destination: RemoteDestinationConfig,
         protocol: str,
     ) -> str:
-        remote_directory = _normalize_remote_directory(remote_destination.directory)
+        remote_directory = _normalize_remote_directory(
+            remote_destination.directory,
+            protocol=protocol,
+        )
         ftp_class: type[ftplib.FTP] = ftplib.FTP_TLS if protocol == "ftps" else ftplib.FTP
         ftp_port = remote_destination.port or 21
         archive_name = local_archive_path.name
@@ -266,7 +269,10 @@ class BackupManager:
         local_archive_path: Path,
         remote_destination: RemoteDestinationConfig,
     ) -> str:
-        remote_directory = _normalize_remote_directory(remote_destination.directory)
+        remote_directory = _normalize_remote_directory(
+            remote_destination.directory,
+            protocol="ssh",
+        )
         archive_name = local_archive_path.name
         remote_target = (
             f"{remote_destination.username}@{remote_destination.host}:{remote_directory}/{archive_name}"
@@ -304,7 +310,10 @@ class BackupManager:
         local_archive_path: Path,
         remote_destination: RemoteDestinationConfig,
     ) -> str:
-        remote_directory = _normalize_remote_directory(remote_destination.directory)
+        remote_directory = _normalize_remote_directory(
+            remote_destination.directory,
+            protocol="ssh",
+        )
         archive_name = local_archive_path.name
         remote_target = (
             f"{remote_destination.username}@{remote_destination.host}:{remote_directory}/{archive_name}"
@@ -640,19 +649,33 @@ def _sanitize_filesystem_component(value: str) -> str:
     return sanitized or "unknown"
 
 
-def _normalize_remote_directory(value: str) -> str:
+def _normalize_remote_directory(value: str, *, protocol: str) -> str:
     normalized = re.sub(r"/+", "/", value.strip())
     if not normalized:
-        return "/"
-    if not normalized.startswith("/"):
-        normalized = f"/{normalized}"
-    if len(normalized) > 1:
+        return "/" if protocol in {"ftp", "ftps"} else "."
+
+    if len(normalized) > 1 and normalized != "~":
         normalized = normalized.rstrip("/")
-    return normalized or "/"
+
+    if protocol in {"ftp", "ftps"}:
+        if not normalized.startswith("/"):
+            normalized = f"/{normalized.lstrip('/')}"
+        return normalized or "/"
+
+    if normalized.startswith("~/"):
+        suffix = normalized[2:].lstrip("/")
+        return "~" if not suffix else f"~/{suffix}"
+
+    return normalized
 
 
 def _remote_artifact_reference(*, protocol: str, host: str, directory: str, archive_name: str) -> str:
-    directory_segment = "" if directory == "/" else directory
+    if directory in {"/", "."}:
+        directory_segment = ""
+    elif directory.startswith("/"):
+        directory_segment = directory
+    else:
+        directory_segment = f"/{directory}"
     return f"{protocol}://{host}{directory_segment}/{archive_name}"
 
 

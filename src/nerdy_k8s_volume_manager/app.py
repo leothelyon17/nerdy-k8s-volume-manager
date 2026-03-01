@@ -497,6 +497,10 @@ def main() -> None:
         remote_username_input = st.sidebar.text_input("Remote username", value="")
         remote_password_input = st.sidebar.text_input("Remote password", value="", type="password")
         remote_directory_input = st.sidebar.text_input("Remote backup directory", value="/")
+        st.sidebar.caption(
+            "For SCP/RSYNC use a writable path "
+            "(for example `/volume1/<share>/nkvm` or `~/nkvm`)."
+        )
         st.sidebar.caption(f"Local staging directory: {base_config.backup_dir}")
 
     metadata_db_path_input = str(base_config.metadata_db_path)
